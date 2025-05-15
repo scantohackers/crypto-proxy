@@ -1,4 +1,5 @@
 // index.js
+
 const WebSocket = require("ws");
 const express = require("express");
 const http = require("http");
@@ -19,8 +20,8 @@ wss.on("connection", (client, req) => {
   const { pathname } = url.parse(req.url);
   const parts = pathname.split("/");
 
-  const exchange = parts[2]; // e.g. 'binance'
-  const pair = parts[3];     // e.g. 'btcusdt'
+  const exchange = parts[2]; // e.g., 'binance'
+  const pair = parts[3];     // e.g., 'btcusdt'
 
   if (exchange !== "binance" || !pair) {
     client.send(JSON.stringify({ error: "Unsupported or missing symbol" }));
@@ -28,9 +29,8 @@ wss.on("connection", (client, req) => {
     return;
   }
 
-  // Connect to both @ticker and @depth
-  const tickerWS = new WebSocket(`wss://stream.binance.com:9443/ws/${pair}@ticker`);
-  const depthWS = new WebSocket(`wss://stream.binance.com:9443/ws/${pair}@depth`);
+  const streamUrl = `wss://stream.binance.com:9443/stream?streams=${pair}@ticker/${pair}@depth`;
+  const binanceWS = new WebSocket(streamUrl);
 
   const combined = {
     price: null,
@@ -41,40 +41,55 @@ wss.on("connection", (client, req) => {
 
   const sendIfComplete = () => {
     if (combined.price && combined.percent && combined.bids && combined.asks) {
-      client.send(JSON.stringify({
+      const fullData = {
         c: combined.price,
         P: combined.percent,
         b: combined.bids,
         a: combined.asks
-      }));
+      };
+      client.send(JSON.stringify(fullData));
     }
   };
 
-  tickerWS.on("message", (data) => {
-  console.log("🔥 TICKER DATA:", data);  
-  const json = JSON.parse(data);
-  combined.price = json.c;
-  combined.percent = json.P;
-  sendIfComplete();
-});
+  binanceWS.on("open", () => {
+    console.log(`✅ Connected to Binance stream for ${pair}`);
+  });
 
-depthWS.on("message", (data) => {
-  console.log("📊 DEPTH DATA:", data); 
-  const json = JSON.parse(data);
-  combined.bids = json.b;
-  combined.asks = json.a;
-  sendIfComplete();
-});
- 
+  binanceWS.on("message", (data) => {
+    try {
+      console.log("🔥 Received from Binance:", data); // Debug log
+      const msg = JSON.parse(data);
+      const stream = msg.stream;
+      const json = msg.data;
 
-  // Clean up
-  const closeAll = () => {
-    if (tickerWS.readyState === WebSocket.OPEN) tickerWS.close();
-    if (depthWS.readyState === WebSocket.OPEN) depthWS.close();
-  };
+      if (stream.endsWith("@ticker")) {
+        combined.price = json.c;
+        combined.percent = json.P;
+      } else if (stream.endsWith("@depth")) {
+        combined.bids = json.b;
+        combined.asks = json.a;
+      }
 
-  client.on("close", closeAll);
-  client.on("error", closeAll);
+      sendIfComplete();
+
+    } catch (e) {
+      console.error("❌ Failed to parse message:", e.message);
+    }
+  });
+
+  binanceWS.on("error", (err) => {
+    console.error("❌ Binance WebSocket error:", err.message);
+  });
+
+  binanceWS.on("close", () => {
+    console.log("🔌 Binance WebSocket closed");
+  });
+
+  client.on("close", () => {
+    if (binanceWS.readyState === WebSocket.OPEN) {
+      binanceWS.close();
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
