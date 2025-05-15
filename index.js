@@ -51,18 +51,21 @@ wss.on("connection", (client, req) => {
   };
 
   tickerWS.on("message", (data) => {
-    const json = JSON.parse(data);
-    combined.price = json.c;
-    combined.percent = json.P;
-    sendIfComplete();
-  });
+  console.log("🔥 TICKER DATA:", data);  
+  const json = JSON.parse(data);
+  combined.price = json.c;
+  combined.percent = json.P;
+  sendIfComplete();
+});
 
-  depthWS.on("message", (data) => {
-    const json = JSON.parse(data);
-    combined.bids = json.b;
-    combined.asks = json.a;
-    sendIfComplete();
-  });
+depthWS.on("message", (data) => {
+  console.log("📊 DEPTH DATA:", data); 
+  const json = JSON.parse(data);
+  combined.bids = json.b;
+  combined.asks = json.a;
+  sendIfComplete();
+});
+ 
 
   // Clean up
   const closeAll = () => {
